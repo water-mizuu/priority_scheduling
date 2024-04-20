@@ -9,7 +9,9 @@ import "package:google_fonts/google_fonts.dart";
 typedef Process = ({String id, int arrivalTime, int burstTime, int priority});
 typedef ProcessSpan = ({int start, int end, Process process});
 typedef ProcessSlice = ({int start, Process process});
-typedef GanttResult = Map<String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>;
+
+typedef GanttResultValue = ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime});
+typedef GanttResult = Map<String, GanttResultValue>;
 
 Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
   List<bool> completedProcesses = List<bool>.filled(processes.length, false);
@@ -176,35 +178,39 @@ Iterable<ProcessSpan> preemptivePriority(List<Process> processes) sync* {
 GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
   ImmutableList<ProcessSpan> executedChart = spans.toImmutableList();
   ImmutableList<Process> processes = executedChart.map((ProcessSpan span) => span.process).toSet().toImmutableList();
+  Map<String, GanttResultValue> result = <String, GanttResultValue>{};
 
-  return <String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>{
-    for (Process process in processes)
-      process.id: (
-        arrivalTime: process.arrivalTime,
-        burstTime: process.burstTime,
-        turnaroundTime: executedChart
-            .where((ProcessSpan span) => span.process.id == process.id)
-            .map((ProcessSpan span) => span.end - span.process.arrivalTime)
-            .reduce(math.max),
-        waitingTime: () {
-          ProcessSpan firstSpan = executedChart.firstWhere((ProcessSpan span) => span.process.id == process.id);
-          int sum = firstSpan.start - firstSpan.process.arrivalTime;
+  for (Process process in processes) {
+    int arrivalTime = process.arrivalTime;
+    int burstTime = process.burstTime;
+    int turnaroundTime = executedChart
+        .where((ProcessSpan span) => span.process.id == process.id)
+        .map((ProcessSpan span) => span.end - span.process.arrivalTime)
+        .reduce(math.max);
 
-          for (int j = executedChart.length - 1; j >= 0; --j) {
-            for (int i = j - 1; i >= 0; --i) {
-              ProcessSpan left = executedChart[i];
-              ProcessSpan right = executedChart[j];
+    ProcessSpan firstSpan = executedChart.firstWhere((ProcessSpan span) => span.process.id == process.id);
+    int waitingTime = firstSpan.start - firstSpan.process.arrivalTime;
 
-              if (left.process.id == process.id && right.process.id == process.id) {
-                sum += right.start - left.end;
-              }
-            }
-          }
+    for (int j = executedChart.length - 1; j >= 0; --j) {
+      for (int i = j - 1; i >= 0; --i) {
+        ProcessSpan left = executedChart[i];
+        ProcessSpan right = executedChart[j];
 
-          return sum;
-        }(),
-      ),
-  };
+        if (left.process.id == process.id && right.process.id == process.id) {
+          waitingTime += right.start - left.end;
+        }
+      }
+    }
+
+    result[process.id] = (
+      arrivalTime: arrivalTime,
+      burstTime: burstTime,
+      turnaroundTime: turnaroundTime,
+      waitingTime: waitingTime,
+    );
+  }
+
+  return result;
 }
 
 void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 120]) {
