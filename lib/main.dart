@@ -11,7 +11,7 @@ typedef ProcessSpan = ({int start, int end, Process process});
 typedef ProcessSlice = ({int start, Process process});
 typedef GanttResult = Map<String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>;
 
-Iterable<ProcessSlice> nonPreemptivePriority(List<Process> processes) sync* {
+Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
   List<bool> completedProcesses = List<bool>.filled(processes.length, false);
   List<(int index, Process process)> queue = <(int index, Process process)>[];
 
@@ -165,6 +165,10 @@ Iterable<ProcessSpan> _stitchSlices(Iterable<ProcessSlice> processes) sync* {
   }
 }
 
+Iterable<ProcessSpan> nonPreemptivePriority(List<Process> processes) sync* {
+  yield* _stitchSlices(_nonPreemptivePriority(processes));
+}
+
 Iterable<ProcessSpan> preemptivePriority(List<Process> processes) sync* {
   yield* _stitchSlices(_preemptivePriority(processes));
 }
@@ -246,14 +250,6 @@ void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 120]) {
 }
 
 void main() {
-  const List<Process> processes = <Process>[
-    (id: "P1", arrivalTime: 0, priority: 3, burstTime: 3),
-    (id: "P2", arrivalTime: 1, priority: 2, burstTime: 4),
-    (id: "P3", arrivalTime: 2, priority: 4, burstTime: 6),
-    (id: "P4", arrivalTime: 3, priority: 6, burstTime: 4),
-    (id: "P5", arrivalTime: 5, priority: 10, burstTime: 2),
-  ];
-
   runApp(const MyApp());
 }
 
@@ -312,10 +308,16 @@ class AlgorithmResult extends InheritedWidget {
   }
 }
 
+enum Algorithm {
+  preemptivePriority,
+  nonPreemptivePriority,
+}
+
 class ExecuteAlgorithm extends Notification {
-  const ExecuteAlgorithm(this.processes);
+  const ExecuteAlgorithm(this.processes, this.algorithm);
 
   final List<Process> processes;
+  final Algorithm algorithm;
 }
 
 class MainPage extends StatefulWidget {
@@ -333,10 +335,12 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return NotificationListener<ExecuteAlgorithm>(
       onNotification: (ExecuteAlgorithm notification) {
-        ImmutableList<ProcessSpan> spans =
-            _stitchSlices(nonPreemptivePriority(notification.processes)).toImmutableList();
+        ImmutableList<ProcessSpan> spans = switch (notification.algorithm) {
+          Algorithm.preemptivePriority => preemptivePriority,
+          Algorithm.nonPreemptivePriority => nonPreemptivePriority,
+        }(notification.processes)
+            .toImmutableList();
 
-        displayGanttChart(spans);
         setState(() {
           this.sequence = spans;
           this.ganttResult = processGanttResult(spans);
@@ -424,6 +428,7 @@ class InputArea extends StatefulWidget {
 
 class _InputAreaState extends State<InputArea> {
   late final List<ImmutableList<TextEditingController>> controllers;
+  late Algorithm algorithm;
 
   static const List<Process> processes = <Process>[
     // (id: "A", arrivalTime: 2, burstTime: 6, priority: 3),
@@ -444,6 +449,7 @@ class _InputAreaState extends State<InputArea> {
     super.initState();
 
     controllers = <ImmutableList<TextEditingController>>[];
+    algorithm = Algorithm.nonPreemptivePriority;
 
     for (Process process in processes) {
       controllers.add(
@@ -505,9 +511,30 @@ class _InputAreaState extends State<InputArea> {
                 ),
               ),
               const SizedBox(height: 8.0),
-              const Padding(
-                padding: EdgeInsets.only(left: 8.0),
-                child: Text("Priority Scheduling", style: TextStyle(fontSize: 18.0)),
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        switch (algorithm) {
+                          case Algorithm.preemptivePriority:
+                            algorithm = Algorithm.nonPreemptivePriority;
+                          case Algorithm.nonPreemptivePriority:
+                            algorithm = Algorithm.preemptivePriority;
+                        }
+                      });
+                    },
+                    child: Text(
+                      switch (algorithm) {
+                        Algorithm.preemptivePriority => "Priority Scheduling (P)",
+                        Algorithm.nonPreemptivePriority => "Priority Scheduling (NP)",
+                      },
+                      style: const TextStyle(fontSize: 18.0, decoration: TextDecoration.underline),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 24.0),
               Text(
@@ -541,7 +568,7 @@ class _InputAreaState extends State<InputArea> {
                         ),
                     ];
 
-                    ExecuteAlgorithm(processes).dispatch(context);
+                    ExecuteAlgorithm(processes, algorithm).dispatch(context);
                   },
                   child: const Text("Run"),
                 ),
