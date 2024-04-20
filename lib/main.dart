@@ -336,56 +336,135 @@ class Results extends StatelessWidget {
   }
 }
 
-class InputArea extends StatelessWidget {
+class ControllerRepository extends InheritedWidget {
+  const ControllerRepository({
+    required this.controllers,
+    required void Function() addRow,
+    required void Function() removeLastRow,
+    required super.child,
+    super.key,
+  })  : this._addRow = addRow,
+        this._removeLastRow = removeLastRow;
+
+  final ImmutableList<ImmutableList<TextEditingController>> controllers;
+  final void Function() _addRow;
+  final void Function() _removeLastRow;
+
+  static ControllerRepository? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<ControllerRepository>();
+  }
+
+  @override
+  bool updateShouldNotify(ControllerRepository oldWidget) {
+    return true;
+  }
+
+  void addRow() {
+    this._addRow();
+  }
+
+  void removeLastRow() {
+    this._removeLastRow();
+  }
+}
+
+class InputArea extends StatefulWidget {
   const InputArea({
     super.key,
   });
 
   @override
+  State<InputArea> createState() => _InputAreaState();
+}
+
+class _InputAreaState extends State<InputArea> {
+  late final List<ImmutableList<TextEditingController>> controllers;
+
+  @override
+  void initState() {
+    super.initState();
+
+    controllers = <ImmutableList<TextEditingController>>[];
+  }
+
+  void addRow() {
+    setState(() {
+      controllers.add(
+        <TextEditingController>[
+          for (int i = 0; i < 4; ++i) TextEditingController(),
+        ].asImmutable(),
+      );
+    });
+  }
+
+  void removeLatestRow() {
+    setState(() {
+      controllers.removeLast();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4.0),
-        color: const Color(0xFFFFFFFF),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 18.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              "Output",
-              style: GoogleFonts.nunito(
-                fontSize: 32.0,
-                fontWeight: FontWeight.bold,
+    return ControllerRepository(
+      controllers: controllers.asImmutable(),
+      addRow: addRow,
+      removeLastRow: removeLatestRow,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4.0),
+          color: const Color(0xFFFFFFFF),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 18.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                "Input",
+                style: GoogleFonts.nunito(
+                  fontSize: 32.0,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 24.0),
-            Text(
-              "Algorithm",
-              style: GoogleFonts.nunito(
-                fontSize: 24.0,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 24.0),
+              Text(
+                "Algorithm",
+                style: GoogleFonts.nunito(
+                  fontSize: 24.0,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8.0),
-            const Padding(
-              padding: EdgeInsets.only(left: 8.0),
-              child: Text("Priority Scheduling", style: TextStyle(fontSize: 18.0)),
-            ),
-            const SizedBox(height: 24.0),
-            Text(
-              "Processes",
-              style: GoogleFonts.nunito(
-                fontSize: 24.0,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 8.0),
+              const Padding(
+                padding: EdgeInsets.only(left: 8.0),
+                child: Text("Priority Scheduling", style: TextStyle(fontSize: 18.0)),
               ),
-            ),
-            const SizedBox(height: 8.0),
-            const Expanded(
-              child: ProcessInput(),
-            ),
-          ],
+              const SizedBox(height: 24.0),
+              Text(
+                "Processes",
+                style: GoogleFonts.nunito(
+                  fontSize: 24.0,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8.0),
+              const Expanded(
+                child: ProcessInput(),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  style: const ButtonStyle(
+                    backgroundColor: MaterialStatePropertyAll<Color>(Color.fromARGB(255, 253, 175, 175)),
+                  ),
+                  onPressed: () {
+                    /// Run the algorithm.
+                  },
+                  child: const Text("Run"),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -396,6 +475,10 @@ extension type ImmutableList<T>(List<T> inner) implements Iterable<T> {
   T operator [](int index) => inner[index];
 }
 
+extension ImmutableListExtension<T> on List<T> {
+  ImmutableList<T> asImmutable() => ImmutableList<T>(this);
+}
+
 class ProcessInput extends StatefulWidget {
   const ProcessInput({super.key});
 
@@ -404,8 +487,6 @@ class ProcessInput extends StatefulWidget {
 }
 
 class _ProcessInputState extends State<ProcessInput> {
-  late final List<Process> processes;
-  late final ImmutableList<TextEditingController> inputControllers;
   late final List<GlobalKey> sizingKeys;
 
   List<double>? sizes;
@@ -414,17 +495,7 @@ class _ProcessInputState extends State<ProcessInput> {
   void initState() {
     super.initState();
 
-    processes = <Process>[];
     sizingKeys = <GlobalKey>[for (int i = 0; i < 4; ++i) GlobalKey()];
-    inputControllers = ImmutableList<TextEditingController>(
-      List<TextEditingController>.generate(
-        4,
-        (_) => TextEditingController()
-          ..addListener(() {
-            setState(() {});
-          }),
-      ),
-    );
 
     /// Run after first render.
     WidgetsBinding.instance.addPostFrameCallback((Duration timeStamp) {
@@ -434,14 +505,10 @@ class _ProcessInputState extends State<ProcessInput> {
     });
   }
 
-  void addProcess(Process process) {
-    setState(() {
-      processes.add(process);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    ControllerRepository? repository = ControllerRepository.of(context);
+
     return SingleChildScrollView(
       child: DataTable(
         clipBehavior: Clip.hardEdge,
@@ -491,28 +558,57 @@ class _ProcessInputState extends State<ProcessInput> {
           ),
         ],
         rows: <DataRow>[
-          for (var Process(:String id, :int arrivalTime, :int burstTime, :int priority) in processes)
-            DataRow(
-              cells: <DataCell>[
-                DataCell(Text(id)),
-                DataCell(Text(arrivalTime.toString())),
-                DataCell(Text(burstTime.toString())),
-                DataCell(Text(priority.toString())),
-              ],
-            ),
+          /// What we want:
+          /// | ID | Arrival Time | Burst Time | Priority |
+          /// |----|--------------|------------|----------|
+          /// | A  |       0      |     4      |    3     |
+          /// |    |              |            |    +     |
+          if (repository?.controllers case ImmutableList<ImmutableList<TextEditingController>> controllers)
+            for (ImmutableList<TextEditingController> controllerRow in controllers)
+              DataRow(
+                cells: <DataCell>[
+                  for (var (int index, TextEditingController controller) in controllerRow.indexed)
+                    DataCell(
+                      SizedBox(
+                        width: sizes?[index],
+                        child: TextField(
+                          controller: controller,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
           DataRow(
             cells: <DataCell>[
-              for (var (int index, TextEditingController controller) in inputControllers.indexed)
-                DataCell(
-                  SizedBox(
-                    width: sizes?[index],
-                    child: TextField(
-                      controller: controller,
-                      textAlign: TextAlign.center,
-                      
+              DataCell(
+                Center(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () {
+                        repository?.removeLastRow();
+                      },
+                      child: const Icon(Icons.remove),
                     ),
                   ),
                 ),
+              ),
+              DataCell.empty,
+              DataCell.empty,
+              DataCell(
+                Center(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () {
+                        repository?.addRow();
+                      },
+                      child: const Icon(Icons.add),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ],
