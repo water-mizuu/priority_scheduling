@@ -7,24 +7,23 @@ import "package:flutter/material.dart";
 import "package:google_fonts/google_fonts.dart";
 
 typedef Process = ({String id, int arrivalTime, int burstTime, int priority});
-typedef ProcessSpan = ({int start, int end, String id, int arrivalTime, int burstTime, int priority});
+typedef ProcessSpan = ({int start, int end, Process process});
+typedef ProcessSlice = ({int start, Process process});
 typedef GanttResult = Map<String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>;
 
-enum CpuState { waiting, running }
-
-Iterable<ProcessSpan> priority(List<Process> processes) sync* {
+Iterable<ProcessSlice> nonPreemptivePriority(List<Process> processes) sync* {
   List<bool> completedProcesses = List<bool>.filled(processes.length, false);
   List<(int index, Process process)> queue = <(int index, Process process)>[];
 
-  CpuState state = CpuState.waiting;
-
-  (int index, Process process, int start, int span)? currentRunning;
+  (int queueIndex, Process process, int runningTime)? currentRunning;
   int currentTime = 0;
 
   while (completedProcesses.any((bool element) => !element)) {
-    for (int i = 0; i < processes.length; ++i) {
-      Process process = processes[i];
-      if (!completedProcesses[i] && process.arrivalTime == currentTime) {
+    for (var (int i, Process process) in processes.indexed) {
+      if (process.arrivalTime < currentTime) {
+        continue;
+      }
+      if (process.arrivalTime == currentTime) {
         /// We have to add.
         if (queue.isEmpty) {
           queue.add((i, process));
@@ -54,56 +53,157 @@ Iterable<ProcessSpan> priority(List<Process> processes) sync* {
       }
     }
 
-    switch ((state, currentRunning)) {
-      case (CpuState.waiting, null):
-        if (queue.isNotEmpty) {
-          var (int index, Process process) = queue.removeAt(0);
-          currentRunning = (index, process, currentTime, 1);
-          state = CpuState.running;
-        }
-        currentTime++;
-      case (CpuState.running, (int index, Process process, int start, int span)):
-        if (span == process.burstTime) {
-          /// The process has completed.
-          completedProcesses[index] = true;
-          yield (
-            start: start,
-            end: currentTime,
-            id: process.id,
-            arrivalTime: process.arrivalTime,
-            burstTime: process.burstTime,
-            priority: process.priority
-          );
+    if (currentRunning case (int queueIndex, Process process, int runningTime)) {
+      if (process.burstTime - (runningTime + 1) <= 0) {
+        /// The process has completed.
+        completedProcesses[queueIndex] = true;
+        currentRunning = null;
+      } else {
+        currentRunning = (queueIndex, process, runningTime + 1);
+      }
 
-          /// Reset the state machine.
-          currentRunning = null;
-          state = CpuState.waiting;
-        } else {
-          currentRunning = (index, process, start, span + 1);
+      yield (start: currentTime, process: process);
+    } else {
+      if (queue.isNotEmpty) {
+        var (int index, Process process) = queue.removeAt(0);
+        currentRunning = (index, process, 1);
 
-          currentTime++;
-        }
-      case _:
-        throw StateError("Invalid State!");
+        yield (start: currentTime, process: process);
+      }
     }
+    currentTime++;
   }
 }
 
+Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
+  List<bool> completedProcesses = List<bool>.filled(processes.length, false);
+  List<(int index, Process process, int runningTime)> queue = <(int index, Process process, int runningTime)>[];
+
+  int currentTime = 0;
+  while (completedProcesses.any((bool element) => !element)) {
+    for (var (int i, Process process) in processes.indexed) {
+      if (process.arrivalTime < currentTime) {
+        continue;
+      }
+      if (process.arrivalTime == currentTime) {
+        /// We have to add.
+        if (queue.isEmpty) {
+          queue.add((i, process, 0));
+          continue;
+        }
+
+        bool hasAdded = false;
+        for (int j = queue.length - 1; j >= 0; --j) {
+          Process left = queue[j].$2;
+          Process right = process;
+
+          if (left.priority <= right.priority) {
+            hasAdded = true;
+            queue.insert(j + 1, (i, process, 0));
+            break;
+          }
+        }
+
+        // [1, 3], 0
+        //     ^   False
+        // [1, 3], 0
+        //  ^      False
+        //
+        if (!hasAdded) {
+          queue.insert(0, (i, process, 0));
+        }
+      }
+    }
+
+    if (queue.isEmpty) {
+      currentTime++;
+      continue;
+    }
+
+    int minimumPriority = queue
+        .where(((int, Process, int) triple) => triple.$2.burstTime - triple.$3 > 0) //
+        .map(((int, Process, int) triple) => triple.$2.priority)
+        .reduce(math.min);
+
+    var (int queueIndex, (int processIndex, Process process, int runningTime)) = queue.indexed //
+        .where(((int, (int, Process, int)) values) => values.$2.$2.priority == minimumPriority)
+        .first;
+
+    yield (start: currentTime, process: process);
+    if (process.burstTime - (runningTime + 1) <= 0) {
+      queue.removeAt(queueIndex);
+      completedProcesses[processIndex] = true;
+    } else {
+      queue[queueIndex] = (processIndex, process, runningTime + 1);
+    }
+
+    currentTime++;
+  }
+}
+
+Iterable<ProcessSpan> _stitchSlices(Iterable<ProcessSlice> processes) sync* {
+  Process? lastProcess;
+  int? lastStart;
+
+  int currentTime = 0;
+  for (var (:int start, :Process process) in processes) {
+    if (lastProcess != null && lastStart != null && lastProcess.id != process.id) {
+      yield (start: lastStart, end: currentTime, process: lastProcess);
+
+      lastStart = null;
+      lastProcess = null;
+    }
+
+    lastStart ??= start;
+    lastProcess ??= process;
+
+    currentTime++;
+  }
+
+  if (lastProcess != null && lastStart != null) {
+    yield (start: lastStart, end: currentTime, process: lastProcess);
+  }
+}
+
+Iterable<ProcessSpan> preemptivePriority(List<Process> processes) sync* {
+  yield* _stitchSlices(_preemptivePriority(processes));
+}
+
 GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
-  List<ProcessSpan> executedChart = spans.toList();
+  ImmutableList<ProcessSpan> executedChart = spans.toImmutableList();
+  ImmutableList<Process> processes = executedChart.map((ProcessSpan span) => span.process).toSet().toImmutableList();
 
   return <String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>{
-    for (ProcessSpan span in executedChart)
-      span.id: (
-        arrivalTime: span.arrivalTime,
-        burstTime: span.burstTime,
-        turnaroundTime: span.end - span.arrivalTime,
-        waitingTime: span.start - span.arrivalTime,
+    for (Process process in processes)
+      process.id: (
+        arrivalTime: process.arrivalTime,
+        burstTime: process.burstTime,
+        turnaroundTime: executedChart
+            .where((ProcessSpan span) => span.process.id == process.id)
+            .map((ProcessSpan span) => span.end - span.process.arrivalTime)
+            .reduce(math.max),
+        waitingTime: () {
+          ProcessSpan firstSpan = executedChart.firstWhere((ProcessSpan span) => span.process.id == process.id);
+          int sum = firstSpan.start - firstSpan.process.arrivalTime;
+
+          for (int j = executedChart.length - 1; j >= 0; --j) {
+            for (int i = j - 1; i >= 0; --i) {
+              ProcessSpan left = executedChart[i];
+              ProcessSpan right = executedChart[j];
+
+              if (left.process.id == process.id && right.process.id == process.id) {
+                sum += right.start - left.end;
+              }
+            }
+          }
+
+          return sum;
+        }(),
       ),
   };
 }
 
-void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 60]) {
+void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 120]) {
   List<ProcessSpan> executedChart = ganttChart.toList();
   int totalSpan = executedChart.last.end - executedChart.first.start;
   List<int> spanPrintSizes = executedChart //
@@ -124,7 +224,7 @@ void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 60]) {
     int size = spanPrintSizes[i];
     secondLine
       ..write("|")
-      ..write(span.id.padLeft((size / 2).round()).padRight(size - 1));
+      ..write(span.process.id.padLeft((size / 2).round()).padRight(size - 1));
   }
   secondLine.write("|");
   stdout.writeln(secondLine);
@@ -146,6 +246,14 @@ void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 60]) {
 }
 
 void main() {
+  const List<Process> processes = <Process>[
+    (id: "P1", arrivalTime: 0, priority: 3, burstTime: 3),
+    (id: "P2", arrivalTime: 1, priority: 2, burstTime: 4),
+    (id: "P3", arrivalTime: 2, priority: 4, burstTime: 6),
+    (id: "P4", arrivalTime: 3, priority: 6, burstTime: 4),
+    (id: "P5", arrivalTime: 5, priority: 10, burstTime: 2),
+  ];
+
   runApp(const MyApp());
 }
 
@@ -225,7 +333,8 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return NotificationListener<ExecuteAlgorithm>(
       onNotification: (ExecuteAlgorithm notification) {
-        ImmutableList<ProcessSpan> spans = priority(notification.processes).toImmutableList();
+        ImmutableList<ProcessSpan> spans =
+            _stitchSlices(nonPreemptivePriority(notification.processes)).toImmutableList();
 
         displayGanttChart(spans);
         setState(() {
@@ -317,11 +426,17 @@ class _InputAreaState extends State<InputArea> {
   late final List<ImmutableList<TextEditingController>> controllers;
 
   static const List<Process> processes = <Process>[
-    (id: "A", arrivalTime: 2, burstTime: 6, priority: 3),
-    (id: "B", arrivalTime: 5, burstTime: 2, priority: 1),
-    (id: "C", arrivalTime: 1, burstTime: 8, priority: 0),
-    (id: "D", arrivalTime: 1, burstTime: 3, priority: 2),
-    (id: "E", arrivalTime: 4, burstTime: 4, priority: 1),
+    // (id: "A", arrivalTime: 2, burstTime: 6, priority: 3),
+    // (id: "B", arrivalTime: 5, burstTime: 2, priority: 1),
+    // (id: "C", arrivalTime: 1, burstTime: 8, priority: 0),
+    // (id: "D", arrivalTime: 1, burstTime: 3, priority: 2),
+    // (id: "E", arrivalTime: 4, burstTime: 4, priority: 1),
+
+    (id: "P1", arrivalTime: 0, priority: 3, burstTime: 3),
+    (id: "P2", arrivalTime: 1, priority: 2, burstTime: 4),
+    (id: "P3", arrivalTime: 2, priority: 4, burstTime: 6),
+    (id: "P4", arrivalTime: 3, priority: 6, burstTime: 4),
+    (id: "P5", arrivalTime: 5, priority: 10, burstTime: 2),
   ];
 
   @override
@@ -653,6 +768,10 @@ class GanttChart extends StatelessWidget {
   final ImmutableList<ProcessSpan> spans;
 
   static double approximateOffset(int value) {
+    if (value == 0) {
+      return 4.0;
+    }
+
     return (4 * (math.log(value) / math.log(10))).floorToDouble();
   }
 
@@ -682,11 +801,11 @@ class GanttChart extends StatelessWidget {
                                 color: const Color(0xFFFDAFAF),
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 6.0),
-                              child: Center(child: Text(span.id)),
+                              child: Center(child: Text(span.process.id)),
                             ),
                             if (spans.first != span)
                               Transform.translate(
-                                offset: const Offset(0, 40.0),
+                                offset: Offset(-approximateOffset(span.end), 41.0),
                                 child: Text(span.start.toString()),
                               ),
                           ],
