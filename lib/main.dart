@@ -14,13 +14,13 @@ typedef GanttResultValue = ({int arrivalTime, int burstTime, int turnaroundTime,
 typedef GanttResult = Map<String, GanttResultValue>;
 
 Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
-  List<bool> completedProcesses = List<bool>.filled(processes.length, false);
+  int completedProcesses = 0;
   List<(int index, Process process)> queue = <(int index, Process process)>[];
 
   (int queueIndex, Process process, int runningTime)? currentRunning;
   int currentTime = 0;
 
-  while (completedProcesses.any((bool element) => !element)) {
+  while (completedProcesses < processes.length) {
     for (var (int i, Process process) in processes.indexed) {
       if (process.arrivalTime < currentTime) {
         continue;
@@ -58,7 +58,7 @@ Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
     if (currentRunning case (int queueIndex, Process process, int runningTime)) {
       if (process.burstTime - (runningTime + 1) <= 0) {
         /// The process has completed.
-        completedProcesses[queueIndex] = true;
+        completedProcesses += 1;
         currentRunning = null;
       } else {
         currentRunning = (queueIndex, process, runningTime + 1);
@@ -78,11 +78,11 @@ Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
 }
 
 Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
-  List<bool> completedProcesses = List<bool>.filled(processes.length, false);
+  int completedProcesses = 0;
   List<(int index, Process process, int runningTime)> queue = <(int index, Process process, int runningTime)>[];
 
   int currentTime = 0;
-  while (completedProcesses.any((bool element) => !element)) {
+  while (completedProcesses < processes.length) {
     for (var (int i, Process process) in processes.indexed) {
       if (process.arrivalTime < currentTime) {
         continue;
@@ -128,13 +128,12 @@ Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
         .reduce(math.min);
 
     var (int queueIndex, (int processIndex, Process process, int runningTime)) = queue.indexed //
-        .where(((int, (int, Process, int)) values) => values.$2.$2.priority == minimumPriority)
-        .first;
+        .firstWhere(((int, (int, Process, int)) values) => values.$2.$2.priority == minimumPriority);
 
     yield (start: currentTime, process: process);
     if (process.burstTime - (runningTime + 1) <= 0) {
       queue.removeAt(queueIndex);
-      completedProcesses[processIndex] = true;
+      completedProcesses += 1;
     } else {
       queue[queueIndex] = (processIndex, process, runningTime + 1);
     }
@@ -198,6 +197,9 @@ GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
 
         if (left.process.id == process.id && right.process.id == process.id) {
           waitingTime += right.start - left.end;
+
+          j = i + 1;
+          break;
         }
       }
     }
@@ -745,9 +747,7 @@ class _ProcessInputState extends State<ProcessInput> {
 }
 
 class OutputArea extends StatelessWidget {
-  const OutputArea({
-    super.key,
-  });
+  const OutputArea({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -768,7 +768,7 @@ class OutputArea extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            if (AlgorithmResult.of(context) case AlgorithmResult(:ImmutableList<ProcessSpan> spans)) ...<Widget>[
+            if (AlgorithmResult.of(context) case AlgorithmResult(:ImmutableList<ProcessSpan> spans?)) ...<Widget>[
               const SizedBox(height: 24.0),
               Text(
                 "Gantt Chart",
