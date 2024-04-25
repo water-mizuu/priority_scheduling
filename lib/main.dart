@@ -360,8 +360,18 @@ class _MainPageState extends State<MainPage> {
         spans: sequence,
         result: ganttResult,
         child: const Scaffold(
-          body: ColoredBox(
-            color: Color(0xFFF7EAEA),
+          body: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  Color.fromARGB(255, 246, 226, 161),
+                  Color(0xFFF5CAC3),
+                  Color.fromARGB(255, 95, 114, 150),
+                ],
+              ),
+            ),
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Column(
@@ -496,7 +506,7 @@ class _InputAreaState extends State<InputArea> {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(4.0),
-          color: const Color(0xFFFFFFFF),
+          color: const Color.fromARGB(255, 249, 253, 249),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 18.0),
@@ -539,7 +549,12 @@ class _InputAreaState extends State<InputArea> {
                         Algorithm.preemptivePriority => "Priority Scheduling (P)",
                         Algorithm.nonPreemptivePriority => "Priority Scheduling (NP)",
                       },
-                      style: const TextStyle(fontSize: 18.0, decoration: TextDecoration.underline),
+                      style: const TextStyle(
+                        fontSize: 18.0,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Color(0XFF69585F),
+                        color: Color(0XFF69585F),
+                      ),
                     ),
                   ),
                 ),
@@ -558,10 +573,10 @@ class _InputAreaState extends State<InputArea> {
               ),
               const SizedBox(height: 12.0),
               Align(
-                alignment: Alignment.centerRight,
+                alignment: Alignment.centerLeft,
                 child: FilledButton(
                   style: const ButtonStyle(
-                    backgroundColor: WidgetStatePropertyAll<Color>(Color(0xFFFDAFAF)),
+                    backgroundColor: MaterialStatePropertyAll<Color>(Color(0xFF465775)),
                   ),
                   onPressed: () {
                     /// Run the algorithm.
@@ -649,7 +664,7 @@ class _ProcessInputState extends State<ProcessInput> {
                 label: Expanded(
                   key: sizingKeys[0],
                   child: const Center(
-                    child: Text("ID"),
+                    child: Text("ID", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -660,7 +675,10 @@ class _ProcessInputState extends State<ProcessInput> {
                     child: Wrap(
                       direction: Axis.vertical,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      children: <Widget>[Text("Arrival"), Text("Time")],
+                      children: <Widget>[
+                        Text("Arrival", style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text("Time", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
                     ),
                   ),
                 ),
@@ -672,7 +690,10 @@ class _ProcessInputState extends State<ProcessInput> {
                     child: Wrap(
                       direction: Axis.vertical,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      children: <Widget>[Text("Burst"), Text("Time")],
+                      children: <Widget>[
+                        Text("Burst", style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text("Time", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
                     ),
                   ),
                 ),
@@ -681,7 +702,7 @@ class _ProcessInputState extends State<ProcessInput> {
                 label: Expanded(
                   key: sizingKeys[3],
                   child: const Center(
-                    child: Text("Priority"),
+                    child: Text("Priority", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -754,7 +775,7 @@ class OutputArea extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(4.0),
-        color: const Color(0xFFFFFFFF),
+        color: const Color.fromARGB(255, 249, 253, 249),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 18.0),
@@ -818,7 +839,7 @@ class GanttChart extends StatelessWidget {
         ),
         Expanded(
           child: ColoredBox(
-            color: const Color(0xFFFDAFAF),
+            color: const Color.fromARGB(255, 81, 124, 131),
             child: Stack(
               children: <Widget>[
                 Row(
@@ -830,8 +851,17 @@ class GanttChart extends StatelessWidget {
                           children: <Widget>[
                             Container(
                               decoration: BoxDecoration(
-                                border: Border.all(color: const Color.fromARGB(255, 180, 125, 125)),
-                                color: const Color(0xFFFDAFAF),
+                                borderRadius: BorderRadius.circular(3),
+                                border: Border.all(color: const Color.fromARGB(255, 81, 124, 131)),
+                                color: const Color.fromARGB(255, 157, 210, 218),
+                                boxShadow: const <BoxShadow>[
+                                  BoxShadow(
+                                    color: Color.fromARGB(25, 0, 0, 0),
+                                    offset: Offset(2, 2),
+                                    blurRadius: 2.0,
+                                    spreadRadius: 1.0,
+                                  ),
+                                ],
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 6.0),
                               child: Center(child: Text(span.process.id)),
@@ -888,11 +918,36 @@ class Results extends StatelessWidget {
         borderRadius: BorderRadius.circular(8.0),
       ),
       columns: const <DataColumn>[
-        DataColumn(label: Text("ID")),
-        DataColumn(label: Text("Burst Time")),
-        DataColumn(label: Text("Arrival Time")),
-        DataColumn(label: Text("Turnaround Time")),
-        DataColumn(label: Text("Waiting Time")),
+        DataColumn(
+          label: Text(
+            "ID",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        DataColumn(
+          label: Text(
+            "Burst Time",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        DataColumn(
+          label: Text(
+            "Arrival Time",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        DataColumn(
+          label: Text(
+            "Turnaround Time",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        DataColumn(
+          label: Text(
+            "Waiting Time",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
       ],
       rows: <DataRow>[
         for (var MapEntry<String, ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime})>(
