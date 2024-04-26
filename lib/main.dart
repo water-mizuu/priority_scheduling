@@ -365,10 +365,11 @@ class _MainPageState extends State<MainPage> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
+                stops: <double>[0.1, 0.5, 1.0],
                 colors: <Color>[
-                  Color.fromARGB(255, 246, 226, 161),
-                  Color(0xFFF5CAC3),
-                  Color.fromARGB(255, 95, 114, 150),
+                  Color.fromARGB(255, 236, 221, 169),
+                  Color.fromARGB(255, 238, 181, 196),
+                  Color.fromARGB(255, 152, 176, 220),
                 ],
               ),
             ),
