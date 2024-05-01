@@ -53,21 +53,21 @@ Iterable<Process> nonPreemptivePrioritySlices(List<Process> processes) sync* {
       }
     }
 
+    if (currentRunning == null && queue.isNotEmpty) {
+      var (int index, Process process) = queue.removeAt(0);
+      currentRunning = (index, process, 0);
+    }
+
     if (currentRunning case (int queueIndex, Process process, int runningTime)) {
       if (process.burstTime - (runningTime + 1) <= 0) {
         /// The process has completed.
         completedProcesses += 1;
         currentRunning = null;
+        yield process;
       } else {
         currentRunning = (queueIndex, process, runningTime + 1);
+        yield process;
       }
-
-      yield process;
-    } else if (queue.isNotEmpty) {
-      var (int index, Process process) = queue.removeAt(0);
-      currentRunning = (index, process, 1);
-
-      yield process;
     }
 
     currentTime++;
@@ -145,6 +145,7 @@ Iterable<ProcessSpan> slicesToSpans(Iterable<Process> processes) sync* {
 
   int currentTime = 0;
   for (Process process in processes) {
+    print(process.id);
     if (lastProcess != null && lastStart != null && lastProcess.id != process.id) {
       yield (start: lastStart, end: currentTime, process: lastProcess);
 
@@ -411,11 +412,11 @@ class _InputAreaState extends State<InputArea> {
     // (id: "D", arrivalTime: 1, burstTime: 3, priority: 2),
     // (id: "E", arrivalTime: 4, burstTime: 4, priority: 1),
 
-    (id: "P1", arrivalTime: 0, priority: 3, burstTime: 3),
-    (id: "P2", arrivalTime: 1, priority: 2, burstTime: 4),
-    (id: "P3", arrivalTime: 2, priority: 4, burstTime: 6),
-    (id: "P4", arrivalTime: 3, priority: 6, burstTime: 4),
-    (id: "P5", arrivalTime: 5, priority: 10, burstTime: 2),
+    (id: "P1", arrivalTime: 0, burstTime: 6, priority: 3),
+    (id: "P2", arrivalTime: 5, burstTime: 2, priority: 1),
+    (id: "P3", arrivalTime: 2, burstTime: 1, priority: 2),
+    (id: "P4", arrivalTime: 7, burstTime: 8, priority: 1),
+    (id: "P5", arrivalTime: 8, burstTime: 3, priority: 2),
   ];
 
   @override
