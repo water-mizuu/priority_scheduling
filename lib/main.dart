@@ -1,6 +1,5 @@
 // ignore_for_file: unreachable_from_main
 
-import "dart:io";
 import "dart:math" as math;
 
 import "package:flutter/material.dart";
@@ -8,12 +7,11 @@ import "package:google_fonts/google_fonts.dart";
 
 typedef Process = ({String id, int arrivalTime, int burstTime, int priority});
 typedef ProcessSpan = ({int start, int end, Process process});
-typedef ProcessSlice = ({int start, Process process});
 
 typedef GanttResultValue = ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime});
 typedef GanttResult = Map<String, GanttResultValue>;
 
-Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
+Iterable<Process> nonPreemptivePrioritySlices(List<Process> processes) sync* {
   int completedProcesses = 0;
   List<(int index, Process process)> queue = <(int index, Process process)>[];
 
@@ -64,20 +62,19 @@ Iterable<ProcessSlice> _nonPreemptivePriority(List<Process> processes) sync* {
         currentRunning = (queueIndex, process, runningTime + 1);
       }
 
-      yield (start: currentTime, process: process);
-    } else {
-      if (queue.isNotEmpty) {
-        var (int index, Process process) = queue.removeAt(0);
-        currentRunning = (index, process, 1);
+      yield process;
+    } else if (queue.isNotEmpty) {
+      var (int index, Process process) = queue.removeAt(0);
+      currentRunning = (index, process, 1);
 
-        yield (start: currentTime, process: process);
-      }
+      yield process;
     }
+
     currentTime++;
   }
 }
 
-Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
+Iterable<Process> preemptivePrioritySlices(List<Process> processes) sync* {
   int completedProcesses = 0;
   List<(int index, Process process, int runningTime)> queue = <(int index, Process process, int runningTime)>[];
 
@@ -130,7 +127,7 @@ Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
     var (int queueIndex, (int processIndex, Process process, int runningTime)) = queue.indexed //
         .firstWhere(((int, (int, Process, int)) values) => values.$2.$2.priority == minimumPriority);
 
-    yield (start: currentTime, process: process);
+    yield process;
     if (process.burstTime - (runningTime + 1) <= 0) {
       queue.removeAt(queueIndex);
       completedProcesses += 1;
@@ -142,12 +139,12 @@ Iterable<ProcessSlice> _preemptivePriority(List<Process> processes) sync* {
   }
 }
 
-Iterable<ProcessSpan> _stitchSlices(Iterable<ProcessSlice> processes) sync* {
+Iterable<ProcessSpan> slicesToSpans(Iterable<Process> processes) sync* {
   Process? lastProcess;
   int? lastStart;
 
   int currentTime = 0;
-  for (var (:int start, :Process process) in processes) {
+  for (Process process in processes) {
     if (lastProcess != null && lastStart != null && lastProcess.id != process.id) {
       yield (start: lastStart, end: currentTime, process: lastProcess);
 
@@ -155,7 +152,7 @@ Iterable<ProcessSpan> _stitchSlices(Iterable<ProcessSlice> processes) sync* {
       lastProcess = null;
     }
 
-    lastStart ??= start;
+    lastStart ??= currentTime;
     lastProcess ??= process;
 
     currentTime++;
@@ -167,11 +164,11 @@ Iterable<ProcessSpan> _stitchSlices(Iterable<ProcessSlice> processes) sync* {
 }
 
 Iterable<ProcessSpan> nonPreemptivePriority(List<Process> processes) sync* {
-  yield* _stitchSlices(_nonPreemptivePriority(processes));
+  yield* slicesToSpans(nonPreemptivePrioritySlices(processes));
 }
 
 Iterable<ProcessSpan> preemptivePriority(List<Process> processes) sync* {
-  yield* _stitchSlices(_preemptivePriority(processes));
+  yield* slicesToSpans(preemptivePrioritySlices(processes));
 }
 
 GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
@@ -213,48 +210,6 @@ GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
   }
 
   return result;
-}
-
-void displayGanttChart(Iterable<ProcessSpan> ganttChart, [int length = 120]) {
-  List<ProcessSpan> executedChart = ganttChart.toList();
-  int totalSpan = executedChart.last.end - executedChart.first.start;
-  List<int> spanPrintSizes = executedChart //
-      .map((ProcessSpan span) => (span.end - span.start) / totalSpan)
-      .map((double ratio) => (ratio * length).floor())
-      .toList();
-
-  StringBuffer firstLine = StringBuffer();
-  for (int size in spanPrintSizes) {
-    firstLine.write("+${"-" * (size - 1)}");
-  }
-  firstLine.write("+");
-  stdout.writeln(firstLine);
-
-  StringBuffer secondLine = StringBuffer();
-  for (int i = 0; i < executedChart.length; ++i) {
-    ProcessSpan span = executedChart.elementAt(i);
-    int size = spanPrintSizes[i];
-    secondLine
-      ..write("|")
-      ..write(span.process.id.padLeft((size / 2).round()).padRight(size - 1));
-  }
-  secondLine.write("|");
-  stdout.writeln(secondLine);
-
-  StringBuffer thirdLine = StringBuffer();
-  for (int size in spanPrintSizes) {
-    thirdLine.write("+${"-" * (size - 1)}");
-  }
-  thirdLine.write("+");
-  stdout.writeln(firstLine);
-
-  StringBuffer fourthLine = StringBuffer();
-  fourthLine.write(executedChart.first.start);
-  for (var (int i, ProcessSpan span) in executedChart.indexed) {
-    int size = spanPrintSizes[i];
-    fourthLine.write("${span.end}".padLeft(size));
-  }
-  stdout.writeln(fourthLine);
 }
 
 void main() {
@@ -467,19 +422,16 @@ class _InputAreaState extends State<InputArea> {
   void initState() {
     super.initState();
 
-    controllers = <ImmutableList<TextEditingController>>[];
     algorithm = Algorithm.nonPreemptivePriority;
-
-    for (Process process in processes) {
-      controllers.add(
+    controllers = <ImmutableList<TextEditingController>>[
+      for (Process process in processes)
         <TextEditingController>[
           TextEditingController(text: process.id),
           TextEditingController(text: process.arrivalTime.toString()),
           TextEditingController(text: process.burstTime.toString()),
           TextEditingController(text: process.priority.toString()),
         ].asImmutable(),
-      );
-    }
+    ];
   }
 
   void addRow() {
@@ -577,7 +529,7 @@ class _InputAreaState extends State<InputArea> {
                 alignment: Alignment.centerLeft,
                 child: FilledButton(
                   style: const ButtonStyle(
-                    backgroundColor: MaterialStatePropertyAll<Color>(Color(0xFF465775)),
+                    backgroundColor: WidgetStatePropertyAll<Color>(Color(0xFF465775)),
                   ),
                   onPressed: () {
                     /// Run the algorithm.
