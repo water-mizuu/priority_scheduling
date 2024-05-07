@@ -1,5 +1,6 @@
-// ignore_for_file: unreachable_from_main
+// ignore_for_file: unreachable_from_main, avoid_init_to_null
 
+import "dart:io";
 import "dart:math" as math;
 
 import "package:flutter/material.dart";
@@ -7,160 +8,113 @@ import "package:google_fonts/google_fonts.dart";
 
 typedef Process = ({String id, int arrivalTime, int burstTime, int priority});
 typedef ProcessSpan = ({int start, int end, Process process});
+typedef ProcessSlice = ({int start, Process process});
 
-typedef GanttResultValue = ({int arrivalTime, int burstTime, int turnaroundTime, int waitingTime});
+typedef GanttResultValue = ({
+  int arrivalTime,
+  int burstTime,
+  int turnaroundTime,
+  int waitingTime,
+});
 typedef GanttResult = Map<String, GanttResultValue>;
 
-Iterable<Process> nonPreemptivePrioritySlices(List<Process> processes) sync* {
+extension on (Process, int) {
+  Process get process => this.$1;
+  int get runningTime => this.$2;
+}
+
+extension<T> on List<T> {
+  T dequeue() => removeAt(0);
+  void enqueueAll(Iterable<T> values) => addAll(values);
+}
+
+Iterable<ProcessSlice> nonPreemptivePrioritySlices(List<Process> processes) sync* {
+  (Process process, int runningTime)? currentRunning = null;
+  List<Process> queue = <Process>[];
   int completedProcesses = 0;
-  List<(int index, Process process)> queue = <(int index, Process process)>[];
-
-  (int queueIndex, Process process, int runningTime)? currentRunning;
   int currentTime = 0;
-
   while (completedProcesses < processes.length) {
-    for (var (int i, Process process) in processes.indexed) {
-      if (process.arrivalTime < currentTime) {
-        continue;
-      }
-      if (process.arrivalTime == currentTime) {
-        /// We have to add.
-        if (queue.isEmpty) {
-          queue.add((i, process));
-          continue;
-        }
-
-        bool hasAdded = false;
-        for (int j = queue.length - 1; j >= 0; --j) {
-          Process left = queue[j].$2;
-          Process right = process;
-
-          if (left.priority <= right.priority) {
-            hasAdded = true;
-            queue.insert(j + 1, (i, process));
-            break;
-          }
-        }
-
-        // [1, 3], 0
-        //     ^   False
-        // [1, 3], 0
-        //  ^      False
-        //
-        if (!hasAdded) {
-          queue.insert(0, (i, process));
-        }
-      }
-    }
+    queue
+      ..enqueueAll(processes.where((Process process) => process.arrivalTime == currentTime))
+      ..sort((Process a, Process b) => a.priority - b.priority);
 
     if (currentRunning == null && queue.isNotEmpty) {
-      var (int index, Process process) = queue.removeAt(0);
-      currentRunning = (index, process, 0);
+      currentRunning = (queue.dequeue(), 0);
     }
 
-    if (currentRunning case (int queueIndex, Process process, int runningTime)) {
-      if (process.burstTime - (runningTime + 1) <= 0) {
-        /// The process has completed.
+    if (currentRunning case (Process process, int runningTime)) {
+      int newRunningTime = runningTime + 1;
+      if (process.burstTime - newRunningTime <= 0) {
         completedProcesses += 1;
         currentRunning = null;
-        yield process;
       } else {
-        currentRunning = (queueIndex, process, runningTime + 1);
-        yield process;
+        currentRunning = (process, newRunningTime);
       }
+      yield (start: currentTime, process: process);
     }
 
     currentTime++;
   }
 }
 
-Iterable<Process> preemptivePrioritySlices(List<Process> processes) sync* {
+Iterable<ProcessSlice> preemptivePrioritySlices(List<Process> processes) sync* {
+  List<(Process process, int runningTime)> queue = <(Process process, int runningTime)>[];
   int completedProcesses = 0;
-  List<(int index, Process process, int runningTime)> queue = <(int index, Process process, int runningTime)>[];
-
   int currentTime = 0;
   while (completedProcesses < processes.length) {
-    for (var (int i, Process process) in processes.indexed) {
-      if (process.arrivalTime < currentTime) {
-        continue;
-      }
-      if (process.arrivalTime == currentTime) {
-        /// We have to add.
-        if (queue.isEmpty) {
-          queue.add((i, process, 0));
-          continue;
-        }
-
-        bool hasAdded = false;
-        for (int j = queue.length - 1; j >= 0; --j) {
-          Process left = queue[j].$2;
-          Process right = process;
-
-          if (left.priority <= right.priority) {
-            hasAdded = true;
-            queue.insert(j + 1, (i, process, 0));
-            break;
-          }
-        }
-
-        // [1, 3], 0
-        //     ^   False
-        // [1, 3], 0
-        //  ^      False
-        //
-        if (!hasAdded) {
-          queue.insert(0, (i, process, 0));
-        }
-      }
-    }
+    queue
+      ..removeWhere(((Process, int) p) => p.process.burstTime - p.runningTime <= 0)
+      ..addAll(processes.where((Process process) => process.arrivalTime == currentTime).map((Process p) => (p, 0)))
+      ..sort(((Process, int) a, (Process, int) b) => a.process.priority - b.process.priority);
 
     if (queue.isEmpty) {
       currentTime++;
       continue;
     }
 
-    int minimumPriority = queue
-        .where(((int, Process, int) triple) => triple.$2.burstTime - triple.$3 > 0) //
-        .map(((int, Process, int) triple) => triple.$2.priority)
-        .reduce(math.min);
+    // Since we are maintaining a priority queue,
+    // the first element will always be the one with the highest priority.
+    var (Process process, int runningTime) = queue.first;
+    int newRunningTime = runningTime + 1;
 
-    var (int queueIndex, (int processIndex, Process process, int runningTime)) = queue.indexed //
-        .firstWhere(((int, (int, Process, int)) values) => values.$2.$2.priority == minimumPriority);
-
-    yield process;
-    if (process.burstTime - (runningTime + 1) <= 0) {
-      queue.removeAt(queueIndex);
+    if (process.burstTime - newRunningTime <= 0) {
       completedProcesses += 1;
-    } else {
-      queue[queueIndex] = (processIndex, process, runningTime + 1);
     }
+    queue.first = (process, newRunningTime);
+    yield (start: currentTime, process: process);
 
     currentTime++;
   }
 }
 
-Iterable<ProcessSpan> slicesToSpans(Iterable<Process> processes) sync* {
+/// Converts an iterable of slices into an iterable of spans.
+/// It run a RLE algorithm to group the slices by process.
+///
+/// For example: a list of slices like: A A A B B A A B C C C D A A A E
+/// Becomes: A3 B2 A2 B1 C3 D1 A3 E1.
+///
+/// The result can be used to generate a Gantt chart.
+Iterable<ProcessSpan> slicesToSpans(Iterable<ProcessSlice> processes) sync* {
   Process? lastProcess;
   int? lastStart;
-
   int currentTime = 0;
-  for (Process process in processes) {
-    print(process.id);
+
+  for (var (:int start, :Process process) in processes) {
     if (lastProcess != null && lastStart != null && lastProcess.id != process.id) {
+      stdout.write("(${lastProcess.id}, $lastStart, $currentTime) ");
       yield (start: lastStart, end: currentTime, process: lastProcess);
 
       lastStart = null;
       lastProcess = null;
     }
 
-    lastStart ??= currentTime;
+    lastStart ??= start;
     lastProcess ??= process;
-
     currentTime++;
   }
-
   if (lastProcess != null && lastStart != null) {
     yield (start: lastStart, end: currentTime, process: lastProcess);
+    stdout.writeln("(${lastProcess.id}, $lastStart, $currentTime) ");
   }
 }
 
@@ -172,9 +126,30 @@ Iterable<ProcessSpan> preemptivePriority(List<Process> processes) sync* {
   yield* slicesToSpans(preemptivePrioritySlices(processes));
 }
 
-GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
-  ImmutableList<ProcessSpan> executedChart = spans.toImmutableList();
-  ImmutableList<Process> processes = executedChart.map((ProcessSpan span) => span.process).toSet().toImmutableList();
+int computeWaitingTime(List<ProcessSpan> executedChart, Process process) {
+  ProcessSpan firstSpan = executedChart.firstWhere((ProcessSpan span) => span.process.id == process.id);
+  int waitingTime = firstSpan.start - firstSpan.process.arrivalTime;
+
+  for (int j = executedChart.length - 1; j >= 0; --j) {
+    for (int i = j - 1; i >= 0; --i) {
+      ProcessSpan left = executedChart[i];
+      ProcessSpan right = executedChart[j];
+
+      if (left.process.id == process.id && right.process.id == process.id) {
+        waitingTime += right.start - left.end;
+
+        j = i + 1;
+        break;
+      }
+    }
+  }
+
+  return waitingTime;
+}
+
+GanttResult processGanttChart(Iterable<ProcessSpan> spans) {
+  List<ProcessSpan> executedChart = spans.toList();
+  List<Process> processes = executedChart.map((ProcessSpan span) => span.process).toSet().toList();
   Map<String, GanttResultValue> result = <String, GanttResultValue>{};
 
   for (Process process in processes) {
@@ -184,24 +159,7 @@ GanttResult processGanttResult(Iterable<ProcessSpan> spans) {
         .where((ProcessSpan span) => span.process.id == process.id)
         .map((ProcessSpan span) => span.end - span.process.arrivalTime)
         .reduce(math.max);
-
-    ProcessSpan firstSpan = executedChart.firstWhere((ProcessSpan span) => span.process.id == process.id);
-    int waitingTime = firstSpan.start - firstSpan.process.arrivalTime;
-
-    for (int j = executedChart.length - 1; j >= 0; --j) {
-      for (int i = j - 1; i >= 0; --i) {
-        ProcessSpan left = executedChart[i];
-        ProcessSpan right = executedChart[j];
-
-        if (left.process.id == process.id && right.process.id == process.id) {
-          waitingTime += right.start - left.end;
-
-          j = i + 1;
-          break;
-        }
-      }
-    }
-
+    int waitingTime = computeWaitingTime(executedChart, process);
     result[process.id] = (
       arrivalTime: arrivalTime,
       burstTime: burstTime,
@@ -307,7 +265,7 @@ class _MainPageState extends State<MainPage> {
 
         setState(() {
           this.sequence = spans;
-          this.ganttResult = processGanttResult(spans);
+          this.ganttResult = processGanttChart(spans);
         });
 
         return true;
